@@ -1,0 +1,120 @@
+---
+- name: create or update dns record on ucs
+  udm_dns_record:
+    name: "{{ ansible_fqdn | replace('.' + dns.zone, '') }}"
+    zone: "{{ dns.zone }}"
+    type: host_record
+    data:
+      a: "{{ dns.ip }}"
+    state: present
+  when: dns.type is defined and dns.type == 'ucs'
+  delegate_to: "{{ dns.ucs_server }}"
+- name: create/modify db
+  mysql_db:
+    name: "{{ roles.magento.db_name }}"
+  when: roles.magento is defined and dns.ip is defined
+  delegate_to: "{{ roles.magento.db_host }}"
+- name: create/modify db user
+  mysql_user:
+    host: "{{ dns.ip }}"
+    name: "{{ roles.magento.db_user }}"
+    password: "{{ roles.magento.db_pass }}"
+    priv: "{{ roles.magento.db_name }}.*:ALL"
+  when: roles.magento is defined and dns.ip is defined
+  delegate_to: "{{ roles.magento.db_host }}"
+- name: install apache
+  include_role:
+    name: lihas_apache
+- name: install apache2 and required software for magento
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - composer
+    - libapache2-mod-php7.3
+    - php7.3-bcmath
+    - php7.3-cli
+    - php7.3-curl
+    - php7.3-gd
+    - php7.3-intl
+    - php7.3-mbstring
+    - php7.3-mysql
+    - php7.3-soap
+    - php7.3-xml
+    - php7.3-xsl
+    - php7.3-zip
+    - sudo
+  loop_control:
+    loop_var: item
+- name: php configuration, https://devdocs.magento.com/guides/v2.3/install-gde/prereq/php-settings.html
+  copy:
+    src: "{{ item }}"
+    dest: "/{{ item }}"
+  loop:
+    - etc/php/7.3/cli/conf.d/99-ansible-magento.ini
+    - etc/php/7.3/apache2/conf.d/99-ansible-magento.ini
+  loop_control:
+    loop_var: item
+  notify: restart_apache2
+- name: enable apache modules, https://devdocs.magento.com/guides/v2.3/install-gde/prereq/apache.html
+  include_role:
+    name: lihas_apache
+    tasks_from: enable_modules.yml
+  include_role:
+    name: lihas_apache
+  vars:
+    apache_modules_enabled:
+      - deflate
+      - expires
+      - headers
+      - rewrite
+      - security
+      - ssl
+- name: create apache site for magento, https://devdocs.magento.com/guides/v2.3/install-gde/prereq/apache.html
+  template:
+    dest: "/etc/apache2/sites-available/{{ item }}.conf"
+    src: "etc/apache2/sites-available/magento.j2"
+  notify: reload_apache2
+  loop:
+    - "{{ roles.magento.hostname }}"
+- name: enable apache site, https://devdocs.magento.com/guides/v2.3/install-gde/prereq/apache.html
+  include_role:
+    name: lihas_apache
+    tasks_from: enable_site.yml
+  include_role:
+    name: lihas_apache
+  vars:
+    apache_sites_enabled:
+      - "{{ roles.magento.hostname }}"
+- name: create magento user
+  user:
+    name: "{{ roles.magento.user | default('magento') }}"
+    comment: "Magento User"
+    create_home: True
+    group: www-data
+    append: no
+    password: '!'
+    system: yes
+
+- name: create magento install directory
+  file:
+    path: "/var/www/html/{{ roles.magento.hostname }}"
+    owner: root
+    group: www-data
+    mode: 02775
+    state: directory
+- name: Install Magento using Composer, https://devdocs.magento.com/guides/v2.3/install-gde/composer.html
+  composer:
+    arguments: "--repository-url=https://{{ roles.magento.repo_user }}:{{ roles.magento.repo_pass }}@repo.magento.com/ magento/project-community-edition={{ roles.magento.version }} /var/www/html/{{ roles.magento.hostname }}"
+    command: create-project
+    working_dir: "/var/www/html/{{ roles.magento.hostname }}"
+  become: true
+  become_user: "{{ roles.magento.user }}"
+- name: set magento umask
+  copy:
+    dest: "/var/www/html/{{ roles.magento.hostname }}/magento_umask"
+    src: var/www/html/magento_umask
+
+
+# TODO: We recommend different permissions and ownership for default mode, developer mode, and production mode.
+# https://devdocs.magento.com/guides/v2.3/install-gde/prereq/file-sys-perms-over.html

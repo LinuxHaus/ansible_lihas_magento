@@ -1,0 +1,13 @@
+<VirtualHost {{ roles.magento.hostname }}:443>
+  Servername {{ roles.magento.hostname }}
+  DocumentRoot {{ roles.magento.hostname }}
+  SSLCertificateFile /var/lib/dehydrated/certs/$FQDN/fullchain.pem
+  SSLCertificateKeyFile /var/lib/dehydrated/certs/$FQDN/privkey.pem
+  AllowEncodedSlashes NoDecode
+  <Directory "/var/www/html/{{ roles.magento.hostname }}">
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride All
+    Order allow,deny
+    Require all granted
+  </Directory>
+</VirtualHost>
