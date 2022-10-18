@@ -12,6 +12,7 @@
 - name: create/modify db
   mysql_db:
     name: "{{ roles.magento.db_name }}"
+    login_unix_socket: "/run/mysqld/mysqld.sock"
   when: roles.magento is defined and dns.ip is defined
   delegate_to: "{{ roles.magento.db_host }}"
 - name: create/modify db user
@@ -20,6 +21,7 @@
     name: "{{ roles.magento.db_user }}"
     password: "{{ roles.magento.db_pass }}"
     priv: "{{ roles.magento.db_name }}.*:ALL"
+    login_unix_socket: "/run/mysqld/mysqld.sock"
   when: roles.magento is defined and dns.ip is defined
   delegate_to: "{{ roles.magento.db_host }}"
 - name: install apache
@@ -60,8 +62,6 @@
   include_role:
     name: lihas_apache
     tasks_from: enable_modules.yml
-  include_role:
-    name: lihas_apache
   vars:
     apache_modules_enabled:
       - deflate
@@ -81,8 +81,6 @@
   include_role:
     name: lihas_apache
     tasks_from: enable_site.yml
-  include_role:
-    name: lihas_apache
   vars:
     apache_sites_enabled:
       - "{{ roles.magento.hostname }}"
